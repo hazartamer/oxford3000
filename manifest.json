@@ -1,0 +1,33 @@
+{
+  "name": "Oxford 3000 Kartları",
+  "short_name": "Oxford 3000",
+  "description": "Oxford 3000 kelimelerini aralıklı tekrar, görseller ve video sahneleriyle öğren.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f2fb",
+  "theme_color": "#7c5cff",
+  "lang": "tr",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
