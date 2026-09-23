@@ -1,6 +1,6 @@
 // Claude API: cümle kontrolü, hafıza ipucu ve hikâye üretimi.
 // Anahtar kullanıcının kendi tarayıcısında saklanır ve istekler doğrudan api.anthropic.com'a gider.
-import { store } from "./storage.js";
+import { store } from "./storage.js?v=11";
 
 const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm";
 let sdk = null;

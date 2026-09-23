@@ -1,9 +1,9 @@
-import { store, save, today, logReview, newCountToday, bumpNew, streak, exportData, importData, resetAll } from "./storage.js";
-import { newCard, knownCard, excludedCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js";
-import { playWord, closeVideo } from "./video.js";
-import { lookup, playAudio } from "./dict.js";
-import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js";
-import * as cloud from "./cloud.js";
+import { store, save, today, logReview, newCountToday, bumpNew, streak, exportData, importData, resetAll } from "./storage.js?v=11";
+import { newCard, knownCard, excludedCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js?v=11";
+import { playWord, closeVideo } from "./video.js?v=11";
+import { lookup, playAudio } from "./dict.js?v=11";
+import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js?v=11";
+import * as cloud from "./cloud.js?v=11";
 
 const LEVELS = ["B1", "B2"];
 const LEVEL_DESC = { B1: "Orta", B2: "Orta üstü" };
