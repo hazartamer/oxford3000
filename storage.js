@@ -20,6 +20,7 @@ const defaults = () => ({
     mode: "classic",   // classic | quiz | write | listen
     newOrder: "shuffle", // shuffle | alpha
     reverse: true,     // öğrenilen kelimeler için Türkçe → İngilizce kartları
+    knownMode: "never", // never = bildiklerim bir daha sorulmaz | check = 1-2 ayda bir kontrol
     apiKey: "",        // yalnızca bu cihazda kalır, buluta gönderilmez
     aiModel: "claude-opus-5",
     _ts: 0,            // ayarların son değişme zamanı

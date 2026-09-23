@@ -1,5 +1,5 @@
 import { store, save, today, logReview, newCountToday, bumpNew, streak, exportData, importData, resetAll } from "./storage.js";
-import { newCard, knownCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js";
+import { newCard, knownCard, excludedCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js";
 import { playWord, closeVideo } from "./video.js";
 import { lookup, playAudio } from "./dict.js";
 import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js";
@@ -15,7 +15,10 @@ const MODES = {
 };
 const POS_EMOJI = { "n.": "📘", "v.": "🏃", "adj.": "🎨", "adv.": "⚡" };
 const LEARN_AHEAD = 20 * 60 * 1000;
-const STATUS_TR = { new: "Yeni", learning: "Öğreniliyor", review: "Biliniyor", mature: "Kalıcı", known: "Zaten biliyordum", leech: "Zorlandıklarım" };
+const STATUS_TR = { new: "Yeni", learning: "Öğreniliyor", review: "Biliniyor", mature: "Kalıcı", known: "Bildiklerim", leech: "Zorlandıklarım" };
+// Ayara göre: kelimeyi tamamen ele ya da uzun aralıkla kontrol et
+const knowCard = () => (S().settings.knownMode === "check" ? knownCard() : excludedCard());
+const isExcluded = (w) => cardOf(w)?.state === "excluded";
 
 let WORDS = [];
 const $ = (s, el = document) => el.querySelector(s);
@@ -157,6 +160,7 @@ function collect(levels, now = Date.now()) {
     for (const dir of ["f", "r"]) {
       const c = cardOf(w, dir);
       if (!c) { if (dir === "f") unseen.push(w); continue; }
+      if (c.state === "excluded") break; // "bir daha sorma" denen kelime hiç gelmez
       if (dir === "r" && !S().settings.reverse) continue;
       if (c.due <= now) due.push({ w, dir, c });
       else if (c.state !== "review" && c.due <= now + LEARN_AHEAD) ahead.push({ w, dir, c });
@@ -342,7 +346,9 @@ function drawScan() {
       <span>Bu turda: <b>${scan.known}</b> biliyorum · <b>${scan.unknown}</b> bilmiyorum${seen >= 10 ? ` · tahmini bilinen oran <b>%${pct}</b>` : ""}</span>
       <button class="btn btn-ghost" id="scanUndo" ${scan.history.length ? "" : "disabled"}>↶ Geri al</button>
     </div>
-    <p class="sub" style="font-size:13px">"Biliyorum" dediklerin 1-2 ay sonra kısa bir kontrol için tekrar karşına çıkar. "Bilmiyorum" dediklerin öğrenme sırasında öne alınır.</p>`
+    <p class="sub" style="font-size:13px">${S().settings.knownMode === "check"
+      ? `"Biliyorum" dediklerin 1-2 ay sonra kısa bir kontrol için tekrar karşına çıkar.`
+      : `"Biliyorum" dediklerin bir daha karşına çıkmaz (Kelimeler sayfasından geri alabilirsin).`} "Bilmiyorum" dediklerin öğrenme sırasında öne alınır.</p>`
     : `<div class="panel done"><div class="big">✅</div><h1 class="h-display">${level} taraması bitti</h1>
       <p class="sub">${known} kelimeyi zaten biliyordun. Kalanlar çalışma listende.</p>
       <div class="chips" style="justify-content:center;margin-top:20px"><a class="btn btn-primary" href="#/study/${level}">Çalışmaya başla</a></div></div>`}`;
@@ -364,7 +370,7 @@ function peekScan() {
 function scanAnswer(knows) {
   const w = scan.current;
   if (!w) return;
-  if (knows) { S().cards[cardKey(w)] = knownCard(); scan.known++; }
+  if (knows) { S().cards[cardKey(w)] = knowCard(); scan.known++; }
   else { S().priority[w.id] = true; scan.unknown++; }
   scan.history.push({ id: w.id, knows });
   save();
@@ -729,11 +735,12 @@ function levenshtein(a, b) {
 
 function markKnown() {
   const w = session.current;
-  S().cards[cardKey(w)] = knownCard();
+  S().cards[cardKey(w)] = knowCard();
+  delete S().cards[cardKey(w, "r")];
   delete S().priority[w.id];
   logReview();
   save();
-  toast(`“${w.word}” bilinenlere eklendi`);
+  toast(S().settings.knownMode === "check" ? `“${w.word}” bilinenlere eklendi` : `“${w.word}” artık karşına çıkmayacak`);
   session.lastId = w.id;
   nextCard();
 }
@@ -843,12 +850,27 @@ function openWord(w) {
     <div class="video-box card-${w.level}" id="modalVideo" hidden></div>
     <div class="modal-foot">
       <span>Durum: <b>${STATUS_TR[s]}</b>${c && c.state === "review" ? ` · sonraki tekrar ${humanize(Math.max(0, c.due - Date.now()))} sonra` : ""}</span>
-      ${!c ? `<button class="btn" id="mKnow">✓ Biliyorum</button>` : ""}
+      ${isExcluded(w) ? `<button class="btn" id="mStudy">↩️ Tekrar çalış</button>` : `<button class="btn" id="mKnow">✓ Biliyorum, sorma</button>`}
     </div>`;
   body.querySelectorAll("[data-speak]").forEach((b) => b.addEventListener("click", () => sayWord(w)));
   bindRich(w, body);
   showVideoBox(w, $("#modalVideo"));
-  $("#mKnow")?.addEventListener("click", () => { S().cards[cardKey(w)] = knownCard(); save(); toast("Bilinenlere eklendi"); closeModal(); route(); });
+  $("#mKnow")?.addEventListener("click", () => {
+    S().cards[cardKey(w)] = knowCard();
+    delete S().cards[cardKey(w, "r")];
+    delete S().priority[w.id];
+    save();
+    toast(S().settings.knownMode === "check" ? "Bilinenlere eklendi" : "Bu kelime artık karşına çıkmayacak");
+    closeModal();
+    route();
+  });
+  $("#mStudy")?.addEventListener("click", () => {
+    for (const dir of ["f", "r"]) { delete S().cards[cardKey(w, dir)]; S().removed[cardKey(w, dir)] = Date.now(); }
+    save();
+    toast("Kelime çalışma listesine geri alındı");
+    closeModal();
+    route();
+  });
   $("#modal").hidden = false;
   if (S().settings.autoSpeak) sayWord(w);
 }
@@ -1034,6 +1056,8 @@ function renderSettings(v) {
         <input type="number" id="dailyNew" min="1" max="200" value="${st.dailyNew}" style="width:90px"></div>
       <div class="panel setting"><div><label for="newOrder">Yeni kelime sırası</label><p>Karışık sıra, benzer kelimelerin birbirine karışmasını önler.</p></div>
         <select id="newOrder">${opt("shuffle", st.newOrder, "Karışık")}${opt("alpha", st.newOrder, "Alfabetik")}</select></div>
+      <div class="panel setting"><div><label for="knownMode">Bildiğim kelimeler</label><p>"Biliyorum" dediğin kelimelere ne olsun?</p></div>
+        <select id="knownMode">${opt("never", st.knownMode, "Bir daha karşıma çıkmasın")}${opt("check", st.knownMode, "1-2 ayda bir kontrol et")}</select></div>
       <div class="panel setting"><div><label>Türkçe → İngilizce kartları</label><p>Öğrendiğin her kelime ertesi gün ters yönde de sorulur (kelimeyi aktif kullanabilmek için).</p></div>
         <label class="switch"><input type="checkbox" id="reverse" ${st.reverse ? "checked" : ""}><span></span></label></div>
       <div class="panel setting"><div><label for="mode">Çalışma modu</label></div>
@@ -1074,6 +1098,18 @@ function renderSettings(v) {
   $("#dailyNew").addEventListener("change", (e) => set("dailyNew", Math.max(1, Math.min(200, Number(e.target.value) || 15))));
   $("#newOrder").addEventListener("change", (e) => set("newOrder", e.target.value));
   $("#reverse").addEventListener("change", (e) => set("reverse", e.target.checked));
+  $("#knownMode").addEventListener("change", (e) => {
+    set("knownMode", e.target.value);
+    // Daha önce "biliyorum" denen kelimeleri yeni ayara uydur
+    let n = 0;
+    for (const [k, c] of Object.entries(S().cards)) {
+      if (!c.known) continue;
+      if (e.target.value === "never" && c.state !== "excluded") { S().cards[k] = { ...excludedCard(), last: c.last || Date.now() }; n++; }
+      else if (e.target.value === "check" && c.state === "excluded") { S().cards[k] = { ...knownCard(), last: c.last || Date.now() }; n++; }
+    }
+    save();
+    if (n) toast(`${n} kelime yeni ayara göre güncellendi`);
+  });
   $("#mode").addEventListener("change", (e) => set("mode", e.target.value));
   $("#accent").addEventListener("change", (e) => set("accent", e.target.value));
   $("#autoSpeak").addEventListener("change", (e) => set("autoSpeak", e.target.checked));

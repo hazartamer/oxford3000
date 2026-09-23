@@ -15,6 +15,12 @@ export function knownCard(now = Date.now()) {
   return { state: "review", due: now + interval * DAY, interval, ease: 2.7, reps: 1, lapses: 0, step: 0, known: true, last: now };
 }
 
+// "Bir daha sorma" denen kelime: hiç zamanlanmaz, listeden geri alınabilir
+export const NEVER = 8.64e15; // JS'in en büyük tarih değeri
+export function excludedCard(now = Date.now()) {
+  return { state: "excluded", due: NEVER, interval: 0, ease: 2.5, reps: 1, lapses: 0, step: 0, known: true, last: now };
+}
+
 export const LEECH_LAPSES = 4;
 
 export function schedule(card, grade, now = Date.now()) {
