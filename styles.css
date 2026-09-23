@@ -456,3 +456,25 @@ body.studying .app { padding-bottom: 24px; }
   .show-row { flex-direction: column-reverse; }
 }
 .dot.known { background: var(--accent); }
+
+/* ---- v3: hesap / giriş ---- */
+body.auth .tabbar, body.auth .topbar { display: none; }
+body.auth .app { padding-bottom: 32px; }
+.auth-wrap { max-width: 420px; margin: 6vh auto 0; display: grid; gap: 18px; }
+.auth-brand { text-align: center; display: grid; justify-items: center; gap: 8px; }
+.brand-mark.big { width: 64px; height: 64px; border-radius: 20px; font-size: 24px; }
+.auth-card { display: grid; gap: 14px; padding: 22px; }
+.auth-card h2 { font-size: 20px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg-2); padding: 4px; border-radius: 14px; }
+.seg button { border: 0; background: transparent; padding: 10px; border-radius: 11px; font-weight: 700; cursor: pointer; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.field { display: grid; gap: 6px; font-weight: 600; font-size: 14px; }
+.field input { padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); font-size: 16px; outline: none; }
+.field input:focus { border-color: var(--accent); }
+.auth-error { color: var(--bad); font-size: 14px; font-weight: 600; min-height: 1em; }
+.auth-error:empty { display: none; }
+.auth-links { display: flex; justify-content: center; }
+.linkish { background: none; border: 0; color: var(--accent); font-weight: 600; cursor: pointer; padding: 6px; font-size: 14px; }
+.linkish.guest { color: var(--muted); justify-self: center; }
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+.sync-dot { font-size: 18px; padding: 4px 8px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); }

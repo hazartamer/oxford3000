@@ -1,6 +1,6 @@
 // Çevrimdışı çalışma: uygulama dosyalarını önbelleğe alır (önce ağ, olmazsa önbellek).
-const CACHE = "ox3000-v3";
-const SHELL = ["./", "index.html", "styles.css", "app.js", "storage.js", "srs.js", "video.js", "ai.js", "dict.js", "manifest.json", "icon.svg", "icon-192.png", "icon-512.png", "data/words.json", "data/content.json", "data/extra.json"];
+const CACHE = "ox3000-v4";
+const SHELL = ["./", "index.html", "styles.css", "app.js", "storage.js", "srs.js", "video.js", "ai.js", "dict.js", "cloud.js", "firebase-config.js", "manifest.json", "icon.svg", "icon-192.png", "icon-512.png", "data/words.json", "data/content.json", "data/extra.json"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

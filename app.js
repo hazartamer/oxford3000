@@ -3,6 +3,7 @@ import { newCard, knownCard, schedule, preview, humanize, isMature, DAY, LEECH_L
 import { playWord, closeVideo } from "./video.js";
 import { lookup, playAudio } from "./dict.js";
 import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js";
+import * as cloud from "./cloud.js";
 
 const LEVELS = ["B1", "B2"];
 const LEVEL_DESC = { B1: "Orta", B2: "Orta üstü" };
@@ -188,14 +189,18 @@ function pickNext(session) {
 }
 
 // ---------- Yönlendirme ----------
-const views = { home: renderHome, study: renderStudy, scan: renderScan, words: renderWords, story: renderStory, stats: renderStats, settings: renderSettings };
+const views = { home: renderHome, study: renderStudy, scan: renderScan, words: renderWords, story: renderStory, stats: renderStats, settings: renderSettings, login: renderLogin };
 
 function route() {
   if (!$("#modal").hidden) closeModal();
   closeVideo();
   document.removeEventListener("keydown", studyKeys);
   document.removeEventListener("keydown", scanKeys);
-  const [name = "home", arg] = location.hash.replace(/^#\/?/, "").split("/");
+  let [name = "home", arg] = location.hash.replace(/^#\/?/, "").split("/");
+  // Hesap sistemi açıksa giriş yapmadan (ya da "hesapsız devam" demeden) uygulamaya geçilmez
+  if (cloud.enabled && !cloud.currentUser() && !cloud.isGuest()) name = "login";
+  else if (name === "login") name = "home";
+  document.body.classList.toggle("auth", name === "login");
   const fn = views[name] || renderHome;
   const tab = { scan: "study", story: "story" }[name] || (views[name] ? name : "home");
   document.querySelectorAll(".tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
@@ -283,7 +288,7 @@ function renderHome(v) {
     </div>`;
 
   v.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
-    S().settings.mode = b.dataset.mode; save();
+    S().settings.mode = b.dataset.mode; S().settings._ts = Date.now(); save();
     v.querySelectorAll("[data-mode]").forEach((x) => x.setAttribute("aria-pressed", x === b));
   }));
   v.querySelectorAll("[data-level]").forEach((b) => b.addEventListener("click", () => { location.hash = `#/study/${b.dataset.level}`; }));
@@ -369,7 +374,7 @@ function scanAnswer(knows) {
 function undoScan() {
   const last = scan.history.pop();
   if (!last) return;
-  if (last.knows) { delete S().cards[String(last.id)]; scan.known--; }
+  if (last.knows) { delete S().cards[String(last.id)]; S().removed[String(last.id)] = Date.now(); scan.known--; }
   else { delete S().priority[last.id]; scan.unknown--; }
   save();
   drawScan();
@@ -550,7 +555,7 @@ function bindRich(w, root) {
     e.stopPropagation();
     tts(b.dataset.say === "ex2" ? w.ex2 : w.ex);
   }));
-  const notes = () => (S().notes[w.id] ||= {});
+  const notes = () => Object.assign((S().notes[w.id] ||= {}), { updated: Date.now() });
   root.querySelector("[data-check]")?.addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     const text = root.querySelector("[data-sentence]").value.trim();
@@ -751,7 +756,7 @@ function grade(g) {
   delete S().priority[w.id];
   // Tanıma kartı ilk kez "biliniyor" olunca ertesi gün üretim kartı (Türkçe → İngilizce) açılır
   if (dir === "f" && next.state === "review" && !S().cards[cardKey(w, "r")]) {
-    S().cards[cardKey(w, "r")] = { ...newCard(), due: Date.now() + DAY };
+    S().cards[cardKey(w, "r")] = { ...newCard(), due: Date.now() + DAY, last: Date.now() };
   }
   logReview();
   save();
@@ -1050,13 +1055,14 @@ function renderSettings(v) {
         </div>
       </div>
 
-      <div class="panel setting"><div><label>Yedekleme / cihaz değiştirme</label><p>İlerlemen bu tarayıcıda saklanır. Telefona taşımak için burada dışa aktar, telefonda içe aktar.</p></div>
+      ${accountHtml()}
+      <div class="panel setting"><div><label>Yedekleme</label><p>İlerlemeni dosya olarak indir ya da geri yükle.</p></div>
         <div class="chips"><button class="btn" id="exp">⬇️ Dışa aktar</button><button class="btn" id="imp">⬆️ İçe aktar</button><input type="file" id="impFile" accept="application/json" hidden></div></div>
       <div class="panel setting"><div><label>Sıfırla</label><p>Tüm ilerlemeyi siler.</p></div>
         <button class="btn" id="reset" style="color:var(--bad)">Sıfırla</button></div>
     </div>`;
 
-  const set = (k, val) => { st[k] = val; save(); };
+  const set = (k, val) => { st[k] = val; if (k !== "apiKey") st._ts = Date.now(); save(); };
   $("#setLevels").addEventListener("click", (e) => {
     const b = e.target.closest(".chip"); if (!b) return;
     const lv = b.dataset.v;
@@ -1094,10 +1100,129 @@ function renderSettings(v) {
     try { importData(await e.target.files[0].text()); applyTheme(); toast("Yedek yüklendi ✓"); route(); }
     catch (err) { toast(err.message); }
   });
+  bindAccount();
   $("#reset").addEventListener("click", () => {
     if (confirm("Tüm ilerleme silinecek. Emin misin?")) { resetAll(); applyTheme(); toast("Sıfırlandı"); route(); }
   });
 }
+
+// ---------- Hesap ----------
+function renderLogin(v) {
+  let mode = "login"; // login | register | reset
+  const draw = () => {
+    const title = { login: "Giriş yap", register: "Hesap oluştur", reset: "Şifreni sıfırla" }[mode];
+    v.innerHTML = `
+      <div class="auth-wrap">
+        <div class="auth-brand">
+          <span class="brand-mark big">3K</span>
+          <h1 class="h-display">Oxford 3000</h1>
+          <p class="sub">B1–B2 kelimelerini öğren. İlerlemen hesabında saklanır; telefonda ve bilgisayarda kaldığın yerden devam edersin.</p>
+        </div>
+        <form class="panel auth-card" id="authForm" novalidate>
+          ${mode !== "reset"
+            ? `<div class="seg"><button type="button" data-m="login" aria-pressed="${mode === "login"}">Giriş yap</button><button type="button" data-m="register" aria-pressed="${mode === "register"}">Kayıt ol</button></div>`
+            : `<h2>${title}</h2><p class="hint">E-posta adresine bir sıfırlama bağlantısı göndereceğiz.</p>`}
+          <label class="field"><span>E-posta</span><input type="email" id="aEmail" autocomplete="email" inputmode="email" required></label>
+          ${mode !== "reset" ? `<label class="field"><span>Şifre</span><input type="password" id="aPass" autocomplete="${mode === "register" ? "new-password" : "current-password"}" minlength="6" required></label>` : ""}
+          ${mode === "register" ? `<label class="field"><span>Şifre (tekrar)</span><input type="password" id="aPass2" autocomplete="new-password" minlength="6" required></label><p class="hint">En az 6 karakter.</p>` : ""}
+          <div class="auth-error" id="aErr" role="alert"></div>
+          <button class="btn btn-primary btn-lg" type="submit" id="aSubmit">${mode === "reset" ? "Bağlantı gönder" : title}</button>
+          <div class="auth-links">
+            ${mode === "login" ? `<button type="button" class="linkish" data-m="reset">Şifremi unuttum</button>` : ""}
+            ${mode === "reset" ? `<button type="button" class="linkish" data-m="login">← Girişe dön</button>` : ""}
+          </div>
+        </form>
+        <button class="linkish guest" id="guest">Hesapsız devam et (ilerleme sadece bu cihazda kalır)</button>
+      </div>`;
+    v.querySelectorAll("[data-m]").forEach((b) => b.addEventListener("click", () => { mode = b.dataset.m; draw(); }));
+    $("#guest").addEventListener("click", () => { cloud.setGuest(true); location.hash = "#/home"; route(); });
+    $("#authForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = $("#aEmail").value;
+      const pass = $("#aPass")?.value || "";
+      const err = $("#aErr");
+      const btn = $("#aSubmit");
+      err.textContent = "";
+      if (mode === "register" && pass !== $("#aPass2").value) { err.textContent = "Şifreler aynı değil."; return; }
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Lütfen bekle…";
+      try {
+        if (mode === "login") await cloud.login(email, pass);
+        else if (mode === "register") await cloud.register(email, pass);
+        else {
+          await cloud.resetPassword(email);
+          toast("Sıfırlama e-postası gönderildi. Gelen kutunu (ve spam klasörünü) kontrol et.", 5000);
+          mode = "login";
+          draw();
+        }
+        // Oturum açılınca onCloudChange ana sayfaya yönlendirir
+      } catch (ex) {
+        err.textContent = ex.message;
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    });
+  };
+  draw();
+}
+
+const STATUS_LABEL = {
+  synced: "☁️ Senkronize",
+  syncing: "⏳ Kaydediliyor…",
+  offline: "📴 Çevrimdışı — bağlanınca kaydedilecek",
+  error: "⚠️ Senkronizasyon hatası",
+};
+
+function accountHtml() {
+  if (!cloud.enabled) return "";
+  const u = cloud.currentUser();
+  if (!u) {
+    return `<div class="panel setting"><div><label>Hesap</label><p>Şu an hesapsız kullanıyorsun; ilerlemen sadece bu cihazda. Giriş yaparsan bu cihazdaki ilerleme hesabına aktarılır ve tüm cihazlarında senkronize olur.</p></div>
+      <button class="btn btn-primary" id="goLogin">Giriş yap / Kayıt ol</button></div>`;
+  }
+  return `<div class="panel setting"><div><label>Hesap</label><p><b>${esc(u.email)}</b><br><span id="syncState">${STATUS_LABEL[cloud.syncStatus()]}</span></p></div>
+    <button class="btn" id="logout">Çıkış yap</button></div>`;
+}
+
+function bindAccount() {
+  $("#goLogin")?.addEventListener("click", () => { cloud.setGuest(false); location.hash = "#/login"; route(); });
+  $("#logout")?.addEventListener("click", async () => {
+    if (!confirm("Çıkış yapılsın mı? İlerlemen hesabında kayıtlı kalır.")) return;
+    await cloud.logout();
+    applyTheme();
+    location.hash = "#/login";
+    route();
+  });
+}
+
+function onCloudChange(reason) {
+  applyTheme();
+  if (reason === "auth") {
+    if (cloud.currentUser()) {
+      location.hash = "#/home";
+      toast("Hoş geldin! İlerlemen hesabınla senkronize ediliyor.");
+    }
+    route();
+    return;
+  }
+  // Başka cihazdan gelen güncelleme: çalışma ekranını bölmeden sadece sayaçları yenile
+  $("#streakPill").textContent = `🔥 ${streak()}`;
+  const h = location.hash;
+  if (!h.startsWith("#/study") && !h.startsWith("#/scan") && !h.startsWith("#/settings") && $("#modal").hidden) route();
+}
+
+cloud.onStatus((st) => {
+  const el = $("#syncDot");
+  if (el) {
+    el.textContent = { synced: "☁️", syncing: "⏳", offline: "📴", error: "⚠️" }[st];
+    el.title = STATUS_LABEL[st];
+    el.hidden = !cloud.currentUser();
+  }
+  const s2 = document.getElementById("syncState");
+  if (s2) s2.textContent = STATUS_LABEL[st];
+});
+document.addEventListener("visibilitychange", () => { if (document.hidden) cloud.flush(); });
 
 // ---------- Başlat ----------
 document.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) closeModal(); });
@@ -1105,7 +1230,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#mod
 window.addEventListener("hashchange", route);
 
 applyTheme();
-loadData().then(route).catch((err) => {
+loadData().then(() => cloud.init(onCloudChange)).then(route).catch((err) => {
   $("#view").innerHTML = `<div class="panel"><h2>Veriler yüklenemedi</h2><p class="sub">${esc(err.message)}</p>
     <p class="sub">Uygulamayı <b>baslat.bat</b> ile (yerel sunucu üzerinden) açtığından emin ol.</p></div>`;
 });

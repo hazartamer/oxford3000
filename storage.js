@@ -1,11 +1,14 @@
-// İlerleme verisini tarayıcıda (localStorage) saklar.
+// İlerleme verisini tarayıcıda (localStorage) saklar; hesap açıksa cloud.js buluta senkronize eder.
 const KEY = "ox3000.v1";
 
 const defaults = () => ({
-  cards: {},          // "id" (tanıma) veya "id r" (üretim) -> { due, interval, ease, reps, lapses, step, state, known?, leech? }
+  owner: "",          // bu verinin ait olduğu hesap (uid); boşsa hesapsız kullanım
+  cards: {},          // "id" (tanıma) veya "id r" (üretim) -> { due, interval, ease, reps, lapses, step, state, last, known?, leech? }
+  resetAt: 0,         // "Sıfırla" zamanı: bundan eski kartlar senkronizasyonda geri gelmez
+  removed: {},        // geri alınan kartlar: anahtar -> silinme zamanı (senkronizasyonda geri gelmesinler)
   activity: {},       // "YYYY-MM-DD" -> tekrar sayısı
   newToday: { date: "", count: 0 },
-  notes: {},          // id -> { sentence, feedback, mnemonic }
+  notes: {},          // id -> { sentence, feedback, mnemonic, updated }
   priority: {},       // taramada "bilmiyorum" denen kelimeler önce gelir
   stories: [],        // yapay zekâ ile üretilen hikâyeler
   settings: {
@@ -17,16 +20,18 @@ const defaults = () => ({
     mode: "classic",   // classic | quiz | write | listen
     newOrder: "shuffle", // shuffle | alpha
     reverse: true,     // öğrenilen kelimeler için Türkçe → İngilizce kartları
-    apiKey: "",
+    apiKey: "",        // yalnızca bu cihazda kalır, buluta gönderilmez
     aiModel: "claude-opus-5",
+    _ts: 0,            // ayarların son değişme zamanı
   },
 });
 
 let state = load();
+let saveHook = null;
 
-function merge(d) {
+export function normalize(d) {
   const base = defaults();
-  const out = { ...base, ...d, settings: { ...base.settings, ...(d.settings || {}) } };
+  const out = { ...base, ...d, settings: { ...base.settings, ...(d?.settings || {}) } };
   out.settings.levels = out.settings.levels.filter((l) => l === "B1" || l === "B2");
   if (!out.settings.levels.length) out.settings.levels = ["B1"];
   return out;
@@ -35,17 +40,31 @@ function merge(d) {
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? merge(JSON.parse(raw)) : defaults();
+    return raw ? normalize(JSON.parse(raw)) : defaults();
   } catch {
     return defaults();
   }
 }
 
-export function save() {
+function writeLocal() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* depolama kapalı olabilir */ }
 }
 
+export function save() {
+  writeLocal();
+  saveHook?.(state);
+}
+
 export const store = () => state;
+export const setSaveHook = (fn) => { saveHook = fn; };
+
+// Buluttan gelen birleşik veriyi yerine koyar (API anahtarı cihazda kalır)
+export function replaceState(next) {
+  const key = state.settings.apiKey;
+  state = normalize(next);
+  state.settings.apiKey = key;
+  writeLocal();
+}
 
 export function today(d = new Date()) {
   const z = (n) => String(n).padStart(2, "0");
@@ -83,15 +102,28 @@ export function exportData() {
 export function importData(text) {
   const d = JSON.parse(text);
   if (!d || typeof d.cards !== "object") throw new Error("Geçersiz yedek dosyası");
-  const key = state.settings.apiKey;
-  state = merge(d);
-  if (!state.settings.apiKey) state.settings.apiKey = key;
+  const { apiKey } = state.settings;
+  const owner = state.owner;
+  state = normalize(d);
+  state.owner = owner;
+  if (!state.settings.apiKey) state.settings.apiKey = apiKey;
   save();
 }
 
 export function resetAll() {
-  const key = state.settings.apiKey;
+  const { apiKey } = state.settings;
+  const owner = state.owner;
   state = defaults();
-  state.settings.apiKey = key;
+  state.owner = owner;
+  state.resetAt = Date.now();
+  state.settings.apiKey = apiKey;
   save();
+}
+
+// Çıkış yapınca bu cihazdaki hesap verisini temizler
+export function clearLocal() {
+  const { apiKey } = state.settings;
+  state = defaults();
+  state.settings.apiKey = apiKey;
+  writeLocal();
 }
