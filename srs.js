@@ -2,7 +2,7 @@
 // Puanlar: 1 = Tekrar, 2 = Zor, 3 = İyi, 4 = Kolay
 const MIN = 60 * 1000;
 export const DAY = 24 * 60 * MIN;
-const LEARN_STEPS = [1, 10];   // dakika
+const LEARN_STEPS = [2, 10];   // dakika: Tekrar = 2 dk (sabit), Zor = 10 dk
 const RELEARN_STEP = 10;       // dakika
 const GRADUATE = 1;            // gün
 const EASY_GRADUATE = 4;       // gün
@@ -21,6 +21,14 @@ export function excludedCard(now = Date.now()) {
   return { state: "excluded", due: NEVER, interval: 0, ease: 2.5, reps: 1, lapses: 0, step: 0, known: true, last: now };
 }
 
+// Hızlı taramadaki üç kova: zor = 2 dk, orta = 10 dk, kolay = 4 gün sonra kontrol
+export function triageCard(level, now = Date.now()) {
+  const base = { ...newCard(), reps: 1, last: now, triage: level };
+  if (level === "easy") return { ...base, state: "review", interval: EASY_GRADUATE, due: now + EASY_GRADUATE * DAY };
+  if (level === "medium") return { ...base, state: "learning", step: 1, due: now + LEARN_STEPS[1] * MIN };
+  return { ...base, state: "learning", step: 0, due: now + LEARN_STEPS[0] * MIN };
+}
+
 export const LEECH_LAPSES = 4;
 
 export function schedule(card, grade, now = Date.now()) {
@@ -34,8 +42,8 @@ export function schedule(card, grade, now = Date.now()) {
       c.due = now + (relearn ? RELEARN_STEP : LEARN_STEPS[0]) * MIN;
     } else if (grade === 2) {
       c.state = relearn ? "relearning" : "learning";
-      const step = relearn ? RELEARN_STEP : LEARN_STEPS[Math.min(c.step, LEARN_STEPS.length - 1)];
-      c.due = now + Math.round(step * 1.5) * MIN;
+      c.step = 1;
+      c.due = now + LEARN_STEPS[1] * MIN;
     } else if (grade === 3) {
       const next = c.step + 1;
       if (!relearn && next < LEARN_STEPS.length) {

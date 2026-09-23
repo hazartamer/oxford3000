@@ -1,5 +1,5 @@
 import { store, save, today, logReview, newCountToday, bumpNew, streak, exportData, importData, resetAll } from "./storage.js";
-import { newCard, knownCard, excludedCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js";
+import { newCard, knownCard, excludedCard, triageCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js";
 import { playWord, closeVideo } from "./video.js";
 import { lookup, playAudio } from "./dict.js";
 import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js";
@@ -304,26 +304,26 @@ let scan = null;
 
 function renderScan(v, lvArg) {
   const level = LEVELS.includes(lvArg) ? lvArg : "B1";
-  scan = { v, level, known: 0, unknown: 0, history: [], peek: false };
+  scan = { v, level, easy: 0, medium: 0, hard: 0, never: 0, history: [], peek: false };
   document.addEventListener("keydown", scanKeys);
   drawScan();
 }
 
 function drawScan() {
   const { v, level } = scan;
-  const list = newOrder(WORDS.filter((w) => w.level === level && !cardOf(w) && !S().priority[w.id]));
+  const list = newOrder(WORDS.filter((w) => w.level === level && !cardOf(w)));
   const total = WORDS.filter((w) => w.level === level).length;
-  const seen = scan.known + scan.unknown;
-  const pct = seen ? Math.round((scan.known / seen) * 100) : 0;
+  const seen = scan.easy + scan.medium + scan.hard;
+  const pct = seen ? Math.round((scan.easy / seen) * 100) : 0;
   const w = list[0];
   scan.current = w;
   scan.peek = false;
-  const known = WORDS.filter((x) => x.level === level && cardOf(x)?.known).length;
+  const sorted = WORDS.filter((x) => x.level === level && cardOf(x)).length;
 
   v.innerHTML = `
     <div class="study-top">
       <a class="icon-btn" href="#/home" aria-label="Çık">✕</a>
-      <div style="flex:1"><b>⚡ Hızlı tarama · ${level}</b><div class="pos" style="font-style:normal">${list.length} kelime taranmadı · ${known}/${total} "biliyorum"</div></div>
+      <div style="flex:1"><b>⚡ Hızlı tarama · ${level}</b><div class="pos" style="font-style:normal">${list.length} kelime taranmadı · ${sorted}/${total} ayrıldı</div></div>
       <div class="chips">${LEVELS.map((l) => `<a class="chip" href="#/scan/${l}" aria-pressed="${l === level}">${l}</a>`).join("")}</div>
     </div>
     ${w ? `
@@ -338,17 +338,17 @@ function drawScan() {
         <div class="meaning" id="peekTr" hidden>${esc(w.tr)}</div>
       </div>
     </div>
-    <div class="scan-actions">
-      <button class="btn scan-no" id="scanNo">✗ Bilmiyorum <span class="kbd">←</span></button>
-      <button class="btn scan-yes" id="scanYes">✓ Biliyorum <span class="kbd">→</span></button>
+    <div class="scan-actions three">
+      <button class="btn scan-hard" data-t="hard">😰 Zor<small>2 dakika sonra <span class="kbd">1</span></small></button>
+      <button class="btn scan-medium" data-t="medium">🙂 Orta<small>10 dakika sonra <span class="kbd">2</span></small></button>
+      <button class="btn scan-easy" data-t="easy">😀 Kolay<small>4 gün sonra <span class="kbd">3</span></small></button>
     </div>
+    <div class="scan-never"><button class="linkish" id="scanNever">Bu kelimeyi hiç sorma <span class="kbd">0</span></button></div>
     <div class="scan-foot">
-      <span>Bu turda: <b>${scan.known}</b> biliyorum · <b>${scan.unknown}</b> bilmiyorum${seen >= 10 ? ` · tahmini bilinen oran <b>%${pct}</b>` : ""}</span>
+      <span>Bu turda: <b>${scan.easy}</b> kolay · <b>${scan.medium}</b> orta · <b>${scan.hard}</b> zor${scan.never ? ` · <b>${scan.never}</b> elendi` : ""}${seen >= 10 ? ` · kolay oranı <b>%${pct}</b>` : ""}</span>
       <button class="btn btn-ghost" id="scanUndo" ${scan.history.length ? "" : "disabled"}>↶ Geri al</button>
     </div>
-    <p class="sub" style="font-size:13px">${S().settings.knownMode === "check"
-      ? `"Biliyorum" dediklerin 1-2 ay sonra kısa bir kontrol için tekrar karşına çıkar.`
-      : `"Biliyorum" dediklerin bir daha karşına çıkmaz (Kelimeler sayfasından geri alabilirsin).`} "Bilmiyorum" dediklerin öğrenme sırasında öne alınır.</p>`
+    <p class="sub" style="font-size:13px">Kolay dediklerin çalışma listesine girmez, 4 gün sonra bir kez kontrol için gelir. Orta 10 dakika, zor 2 dakika sonra karşına çıkar; bilemediğin sürece zor kelimeler hep 2 dakikada bir gelir, doğru bildiğinde aralık açılmaya başlar.</p>`
     : `<div class="panel done"><div class="big">✅</div><h1 class="h-display">${level} taraması bitti</h1>
       <p class="sub">${known} kelimeyi zaten biliyordun. Kalanlar çalışma listende.</p>
       <div class="chips" style="justify-content:center;margin-top:20px"><a class="btn btn-primary" href="#/study/${level}">Çalışmaya başla</a></div></div>`}`;
@@ -356,8 +356,8 @@ function drawScan() {
   if (!w) return;
   v.querySelector("[data-speak]").addEventListener("click", () => sayWord(w));
   $("#peek").addEventListener("click", peekScan);
-  $("#scanNo").addEventListener("click", () => scanAnswer(false));
-  $("#scanYes").addEventListener("click", () => scanAnswer(true));
+  v.querySelectorAll("[data-t]").forEach((b) => b.addEventListener("click", () => scanAnswer(b.dataset.t)));
+  $("#scanNever").addEventListener("click", () => scanAnswer("never"));
   $("#scanUndo").addEventListener("click", undoScan);
 }
 
@@ -367,12 +367,13 @@ function peekScan() {
   $("#peek").hidden = true;
 }
 
-function scanAnswer(knows) {
+function scanAnswer(level) {
   const w = scan.current;
   if (!w) return;
-  if (knows) { S().cards[cardKey(w)] = knowCard(); scan.known++; }
-  else { S().priority[w.id] = true; scan.unknown++; }
-  scan.history.push({ id: w.id, knows });
+  S().cards[cardKey(w)] = level === "never" ? excludedCard() : triageCard(level);
+  if (level === "hard") S().priority[w.id] = true;
+  scan[level]++;
+  scan.history.push({ id: w.id, level });
   save();
   drawScan();
 }
@@ -380,16 +381,18 @@ function scanAnswer(knows) {
 function undoScan() {
   const last = scan.history.pop();
   if (!last) return;
-  if (last.knows) { delete S().cards[String(last.id)]; S().removed[String(last.id)] = Date.now(); scan.known--; }
-  else { delete S().priority[last.id]; scan.unknown--; }
+  delete S().cards[String(last.id)];
+  S().removed[String(last.id)] = Date.now();
+  delete S().priority[last.id];
+  scan[last.level]--;
   save();
   drawScan();
 }
 
 function scanKeys(e) {
   if (!scan?.current || e.target.matches("input, textarea")) return;
-  if (e.key === "ArrowRight") { e.preventDefault(); scanAnswer(true); }
-  else if (e.key === "ArrowLeft") { e.preventDefault(); scanAnswer(false); }
+  const byKey = { 1: "hard", 2: "medium", 3: "easy", 0: "never" }[e.key];
+  if (byKey) { e.preventDefault(); scanAnswer(byKey); }
   else if (e.key === " ") { e.preventDefault(); peekScan(); }
   else if (e.key.toLowerCase() === "z" && (e.ctrlKey || e.metaKey)) undoScan();
 }

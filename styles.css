@@ -478,3 +478,12 @@ body.auth .app { padding-bottom: 32px; }
 .linkish.guest { color: var(--muted); justify-self: center; }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
 .sync-dot { font-size: 18px; padding: 4px 8px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); }
+
+/* ---- v4: taramada üç kova ---- */
+.scan-actions.three { grid-template-columns: repeat(3, 1fr); }
+.scan-actions.three .btn { flex-direction: column; gap: 2px; padding: 14px 6px; font-size: 16px; }
+.scan-actions.three small { font-weight: 600; font-size: 11px; color: var(--muted); }
+.scan-hard { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+.scan-medium { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.scan-easy { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }
+.scan-never { display: flex; justify-content: center; margin-top: 8px; }
