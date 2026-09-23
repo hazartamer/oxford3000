@@ -489,3 +489,7 @@ body.auth .app { padding-bottom: 32px; }
 .scan-medium { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
 .scan-easy { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }
 .scan-never { display: flex; justify-content: center; margin-top: 8px; }
+
+.never-row { display: flex; justify-content: center; margin-top: 6px; }
+.never-row .linkish { color: var(--muted); font-size: 13px; }
+.never-row .linkish:hover { color: var(--bad); }

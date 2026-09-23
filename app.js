@@ -527,7 +527,8 @@ function gradesHtml(card) {
 }
 
 function answerHtml(w, dir, kind, card) {
-  const grades = `<div id="grades" hidden>${gradesHtml(card)}</div>`;
+  const grades = `<div id="grades" hidden>${gradesHtml(card)}</div>
+    <div class="never-row"><button class="linkish" data-never>🚫 Bu kelimeyi bir daha gösterme <span class="kbd">0</span></button></div>`;
   const knowBtn = dir === "f" && !cardOf(w) ? `<button class="btn" id="knowBtn" title="Bu kelimeyi zaten biliyorum">✓ Biliyorum</button>` : "";
   if (kind === "classic") {
     return `<div class="show-row">${knowBtn}<button class="btn btn-primary btn-lg" id="showBtn">Cevabı göster</button></div>${grades}`;
@@ -558,6 +559,7 @@ function bindCardCommon(w, root) {
   root.querySelectorAll("[data-speak]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); sayWord(w); }));
   root.querySelectorAll("[data-slow]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); sayWord(w, 0.6); }));
   root.querySelectorAll("[data-grade]").forEach((b) => b.addEventListener("click", () => grade(b.dataset.grade)));
+  root.querySelectorAll("[data-never]").forEach((b) => b.addEventListener("click", neverShow));
   bindRich(w, root.querySelector(".face.back"));
 }
 
@@ -653,6 +655,19 @@ function markKnown() {
   nextCard();
 }
 
+function neverShow() {
+  const w = session?.current;
+  if (!w) return;
+  S().cards[cardKey(w)] = excludedCard();
+  delete S().cards[cardKey(w, "r")];
+  delete S().priority[w.id];
+  logReview();
+  save();
+  toast(`“${w.word}” bir daha gösterilmeyecek`);
+  session.lastId = w.id;
+  nextCard();
+}
+
 function grade(g) {
   const { current: w, dir } = session;
   if (!w || !session.revealed) return;
@@ -692,6 +707,7 @@ function studyKeys(e) {
     return;
   }
   if (/^[1-3]$/.test(e.key) && session.revealed) { grade(GRADES[Number(e.key) - 1].level); return; }
+  if (e.key === "0") { e.preventDefault(); neverShow(); return; }
   if (e.key.toLowerCase() === "r") sayWord(session.current);
 }
 
