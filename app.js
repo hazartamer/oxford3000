@@ -1,9 +1,9 @@
-import { store, save, today, logReview, newCountToday, bumpNew, streak, exportData, importData, resetAll } from "./storage.js?v=11";
-import { newCard, knownCard, excludedCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js?v=11";
-import { playWord, closeVideo } from "./video.js?v=11";
-import { lookup, playAudio } from "./dict.js?v=11";
-import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js?v=11";
-import * as cloud from "./cloud.js?v=11";
+import { store, save, today, logReview, newCountToday, bumpNew, streak, exportData, importData, resetAll } from "./storage.js?v=12";
+import { newCard, knownCard, excludedCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js?v=12";
+import { playWord, closeVideo } from "./video.js?v=12";
+import { lookup, playAudio } from "./dict.js?v=12";
+import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js?v=12";
+import * as cloud from "./cloud.js?v=12";
 
 const LEVELS = ["B1", "B2"];
 const LEVEL_DESC = { B1: "Orta", B2: "Orta üstü" };
@@ -151,12 +151,15 @@ function newOrder(list) {
   return list.sort((a, b) => (pr[b.id] ? 1 : 0) - (pr[a.id] ? 1 : 0) || (alpha ? a.id - b.id : a.order - b.order));
 }
 
+const letterOf = (w) => w.word[0].toLowerCase();
+const inScope = (w, levels, letter) => levels.includes(w.level) && (!letter || letterOf(w) === letter);
+
 // ---------- Tekrar kuyruğu ----------
 // Kuyruk öğesi: { w, dir: "f" (İngilizce → Türkçe) | "r" (Türkçe → İngilizce) }
-function collect(levels, now = Date.now()) {
+function collect(levels, letter, now = Date.now()) {
   const due = [], ahead = [], unseen = [];
   for (const w of WORDS) {
-    if (!levels.includes(w.level)) continue;
+    if (!inScope(w, levels, letter)) continue;
     for (const dir of ["f", "r"]) {
       const c = cardOf(w, dir);
       if (!c) { if (dir === "f") unseen.push(w); continue; }
@@ -171,8 +174,8 @@ function collect(levels, now = Date.now()) {
   return { due, ahead, unseen };
 }
 
-function queueInfo(levels) {
-  const { due, unseen } = collect(levels);
+function queueInfo(levels, letter) {
+  const { due, unseen } = collect(levels, letter);
   let learn = 0, rev = 0;
   for (const it of due) (it.c.state === "review" ? rev++ : learn++);
   const newLeft = Math.min(unseen.length, Math.max(0, S().settings.dailyNew - newCountToday()));
@@ -180,7 +183,7 @@ function queueInfo(levels) {
 }
 
 function pickNext(session) {
-  const { due, ahead, unseen } = collect(session.levels);
+  const { due, ahead, unseen } = collect(session.levels, session.letter);
   const canNew = unseen.length && newCountToday() < S().settings.dailyNew;
   const avoid = (list) => list.find((it) => it.w.id !== session.lastId) || list[0];
   const fresh = () => ({ w: newOrder(unseen)[0], dir: "f" });
@@ -199,7 +202,7 @@ function route() {
   if (!$("#modal").hidden) closeModal();
   closeVideo();
   document.removeEventListener("keydown", studyKeys);
-  let [name = "home", arg] = location.hash.replace(/^#\/?/, "").split("/");
+  let [name = "home", arg, arg2] = location.hash.replace(/^#\/?/, "").split("/");
   // Hesap sistemi açıksa giriş yapmadan (ya da "hesapsız devam" demeden) uygulamaya geçilmez
   if (cloud.enabled && !cloud.currentUser() && !cloud.isGuest()) name = "login";
   else if (name === "login") name = "home";
@@ -213,7 +216,7 @@ function route() {
   view.style.animation = "none";
   void view.offsetWidth;
   view.style.animation = "";
-  fn(view, arg);
+  fn(view, arg, arg2);
   window.scrollTo(0, 0);
 }
 
@@ -300,17 +303,18 @@ function renderHome(v) {
 // ---------- Çalışma ----------
 let session = null;
 
-function renderStudy(v, lvArg) {
+function renderStudy(v, lvArg, letterArg) {
   const levels = LEVELS.includes(lvArg) ? [lvArg] : S().settings.levels;
-  session = { levels, shown: 0, done: 0, lastId: null, v };
+  const letter = /^[a-z]$/i.test(letterArg || "") ? letterArg.toLowerCase() : null;
+  session = { levels, letter, shown: 0, done: 0, lastId: null, v };
   nextCard();
 }
 
 function nextCard() {
-  const { v, levels } = session;
+  const { v, levels, letter } = session;
   closeVideo();
   const item = pickNext(session);
-  const q = queueInfo(levels);
+  const q = queueInfo(levels, letter);
   const remaining = q.learn + q.rev + q.newLeft;
   const pct = session.done + remaining ? (session.done / (session.done + remaining)) * 100 : 100;
 
@@ -319,7 +323,7 @@ function nextCard() {
       <div class="panel done">
         <div class="big">🎉</div>
         <h1 class="h-display">Tebrikler!</h1>
-        <p class="sub">${levels.join(", ")} için bugünlük tüm kartları bitirdin${session.done ? ` (${session.done} kart)` : ""}.</p>
+        <p class="sub">${levels.join(", ")}${letter ? ` · “${letter.toUpperCase()}” harfi` : ""} için bugünlük tüm kartları bitirdin${session.done ? ` (${session.done} kart)` : ""}.</p>
         <div class="chips" style="justify-content:center;margin-top:20px">
           <button class="btn" id="moreNew">+10 yeni kelime</button>
           <a class="btn" href="#/story">📖 Hikâye oku</a>
@@ -342,6 +346,7 @@ function nextCard() {
   v.innerHTML = `
     <div class="study-top">
       <a class="icon-btn" href="#/home" aria-label="Çık">✕</a>
+      ${letter ? `<span class="scope-chip">${levels.join("+")} · ${letter.toUpperCase()}</span>` : ""}
       <div class="progress"><i style="width:${pct}%"></i></div>
       <div class="counts" title="yeni · öğreniliyor · tekrar">
         <span class="c-new">${q.newLeft}</span><span class="c-learn">${q.learn}</span><span class="c-rev">${q.rev}</span>
@@ -712,7 +717,8 @@ function studyKeys(e) {
 }
 
 // ---------- Kelime listesi ----------
-let listState = { q: "", level: "all", status: "all", limit: 120 };
+let listState = { q: "", level: "all", status: "all", letter: "all", limit: 120 };
+const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
 
 function renderWords(v, arg) {
   if (arg === "leech") listState = { ...listState, status: "leech", limit: 120 };
@@ -727,6 +733,14 @@ function renderWords(v, arg) {
       <div class="chips" id="lvChips">${["all", ...LEVELS].map((l) => `<button class="chip" data-v="${l}" aria-pressed="${listState.level === l}">${l === "all" ? "Tümü" : l}</button>`).join("")}</div>
       <div class="chips" id="stChips">${statuses.map((s) => `<button class="chip" data-v="${s}" aria-pressed="${listState.status === s}">${s === "all" ? "Hepsi" : STATUS_TR[s]}</button>`).join("")}</div>
     </div>
+    <div class="alphabet" id="abcChips">
+      <button class="letter" data-v="all" aria-pressed="${listState.letter === "all"}">Tümü</button>
+      ${LETTERS.map((l) => {
+        const n = WORDS.filter((w) => letterOf(w) === l && (listState.level === "all" || w.level === listState.level)).length;
+        return `<button class="letter" data-v="${l}" aria-pressed="${listState.letter === l}" ${n ? "" : "disabled"}>${l.toUpperCase()}<small>${n}</small></button>`;
+      }).join("")}
+    </div>
+    <div id="letterBar"></div>
     <div class="word-list" id="list"></div>
     <button class="btn list-more" id="more" hidden>Daha fazla göster</button>`;
 
@@ -735,6 +749,7 @@ function renderWords(v, arg) {
     const qtr = listState.q.toLocaleLowerCase("tr").trim();
     const items = WORDS.filter((w) =>
       (listState.level === "all" || w.level === listState.level) &&
+      (listState.letter === "all" || letterOf(w) === listState.letter) &&
       (listState.status === "all" || (listState.status === "leech" ? isLeech(w) : statusOf(w) === listState.status)) &&
       (!qtr || w.word.toLowerCase().includes(q || qtr) || w.tr.toLocaleLowerCase("tr").includes(qtr)));
     $("#list").innerHTML = items.slice(0, listState.limit).map((w) => {
@@ -746,6 +761,18 @@ function renderWords(v, arg) {
       </div>`;
     }).join("") || `<p class="sub">${listState.status === "leech" ? "Zorlandığın kelime yok. 4 kez unutulan kelimeler burada toplanır." : "Sonuç bulunamadı."}</p>`;
     $("#more").hidden = items.length <= listState.limit;
+
+    const bar = $("#letterBar");
+    if (listState.letter === "all") { bar.innerHTML = ""; return; }
+    const lv = listState.level === "all" ? LEVELS : [listState.level];
+    const scope = WORDS.filter((w) => inScope(w, lv, listState.letter));
+    const done = scope.filter(isLearned).length;
+    const info = queueInfo(lv, listState.letter);
+    bar.innerHTML = `<div class="panel letter-bar">
+      <div><b>${listState.letter.toUpperCase()} harfi${listState.level === "all" ? "" : ` · ${listState.level}`}</b>
+        <p class="sub" style="font-size:13px">${scope.length} kelime · ${done} tanesini biliyorsun · bugün ${info.newLeft + info.learn + info.rev} kart hazır</p></div>
+      <a class="btn btn-primary" href="#/study/${listState.level === "all" ? LEVELS[0] : listState.level}/${listState.letter}">▶ Bu harfi çalış</a>
+    </div>`;
   };
   draw();
 
@@ -758,6 +785,14 @@ function renderWords(v, arg) {
   });
   chipGroup("#lvChips", "level");
   chipGroup("#stChips", "status");
+  $("#abcChips").addEventListener("click", (e) => {
+    const b = e.target.closest(".letter");
+    if (!b || b.disabled) return;
+    listState.letter = b.dataset.v;
+    listState.limit = 120;
+    $("#abcChips").querySelectorAll(".letter").forEach((c) => c.setAttribute("aria-pressed", c === b));
+    draw();
+  });
   $("#more").addEventListener("click", () => { listState.limit += 200; draw(); });
   $("#list").addEventListener("click", (e) => {
     const r = e.target.closest(".word-row");
