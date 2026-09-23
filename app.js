@@ -1,5 +1,5 @@
 import { store, save, today, logReview, newCountToday, bumpNew, streak, exportData, importData, resetAll } from "./storage.js";
-import { newCard, knownCard, excludedCard, triageCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js";
+import { newCard, knownCard, excludedCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js";
 import { playWord, closeVideo } from "./video.js";
 import { lookup, playAudio } from "./dict.js";
 import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js";
@@ -193,20 +193,19 @@ function pickNext(session) {
 }
 
 // ---------- Yönlendirme ----------
-const views = { home: renderHome, study: renderStudy, scan: renderScan, words: renderWords, story: renderStory, stats: renderStats, settings: renderSettings, login: renderLogin };
+const views = { home: renderHome, study: renderStudy, words: renderWords, story: renderStory, stats: renderStats, settings: renderSettings, login: renderLogin };
 
 function route() {
   if (!$("#modal").hidden) closeModal();
   closeVideo();
   document.removeEventListener("keydown", studyKeys);
-  document.removeEventListener("keydown", scanKeys);
   let [name = "home", arg] = location.hash.replace(/^#\/?/, "").split("/");
   // Hesap sistemi açıksa giriş yapmadan (ya da "hesapsız devam" demeden) uygulamaya geçilmez
   if (cloud.enabled && !cloud.currentUser() && !cloud.isGuest()) name = "login";
   else if (name === "login") name = "home";
   document.body.classList.toggle("auth", name === "login");
   const fn = views[name] || renderHome;
-  const tab = { scan: "study", story: "story" }[name] || (views[name] ? name : "home");
+  const tab = views[name] ? name : "home";
   document.querySelectorAll(".tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
   document.body.classList.toggle("studying", name === "study");
   $("#streakPill").textContent = `🔥 ${streak()}`;
@@ -229,7 +228,7 @@ function renderHome(v) {
   const wotd = pool[(dayNum * 7919) % pool.length] || WORDS[0];
   const hour = new Date().getHours();
   const greet = hour < 6 ? "İyi geceler" : hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar";
-  const scanned = WORDS.some((w) => cardOf(w));
+  const started = WORDS.some((w) => cardOf(w));
   const leeches = WORDS.filter(isLeech).length;
 
   v.innerHTML = `
@@ -261,9 +260,9 @@ function renderHome(v) {
       </div>
     </section>
 
-    ${!scanned ? `<a class="panel tip-card" href="#/scan/B1">
+    ${!started ? `<a class="panel tip-card" href="#/study">
       <span class="tip-icon">⚡</span>
-      <span><b>Önce hızlı tarama yap</b><small>Zaten bildiğin kelimeleri tek dokunuşla ayır, sadece bilmediklerine çalış.</small></span>
+      <span><b>Hadi başlayalım</b><small>Her kelimede Kolay / Orta / Zor de; kolay dediklerin listeden düşer, zorlar sık sık geri gelir.</small></span>
       <span class="tip-go">→</span></a>` : ""}
 
     <h2 class="section-title">Seviyeler</h2>
@@ -280,7 +279,6 @@ function renderHome(v) {
             </div>
             <div class="lc-meta"><span>${s.total} kelime · ${s.new} yeni</span><span>${lq.learn + lq.rev} tekrar</span></div>
           </button>
-          <a class="lc-scan" href="#/scan/${lv}">⚡ Hızlı tarama</a>
         </div>`;
       }).join("")}
     </div>
@@ -297,104 +295,6 @@ function renderHome(v) {
   }));
   v.querySelectorAll("[data-level]").forEach((b) => b.addEventListener("click", () => { location.hash = `#/study/${b.dataset.level}`; }));
   $("#wotd").addEventListener("click", () => openWord(wotd));
-}
-
-// ---------- Hızlı tarama ----------
-let scan = null;
-
-function renderScan(v, lvArg) {
-  const level = LEVELS.includes(lvArg) ? lvArg : "B1";
-  scan = { v, level, easy: 0, medium: 0, hard: 0, never: 0, history: [], peek: false };
-  document.addEventListener("keydown", scanKeys);
-  drawScan();
-}
-
-function drawScan() {
-  const { v, level } = scan;
-  const list = newOrder(WORDS.filter((w) => w.level === level && !cardOf(w)));
-  const total = WORDS.filter((w) => w.level === level).length;
-  const seen = scan.easy + scan.medium + scan.hard;
-  const pct = seen ? Math.round((scan.easy / seen) * 100) : 0;
-  const w = list[0];
-  scan.current = w;
-  scan.peek = false;
-  const sorted = WORDS.filter((x) => x.level === level && cardOf(x)).length;
-
-  v.innerHTML = `
-    <div class="study-top">
-      <a class="icon-btn" href="#/home" aria-label="Çık">✕</a>
-      <div style="flex:1"><b>⚡ Hızlı tarama · ${level}</b><div class="pos" style="font-style:normal">${list.length} kelime taranmadı · ${sorted}/${total} ayrıldı</div></div>
-      <div class="chips">${LEVELS.map((l) => `<a class="chip" href="#/scan/${l}" aria-pressed="${l === level}">${l}</a>`).join("")}</div>
-    </div>
-    ${w ? `
-    <div class="flashcard static card-${w.level} scan-card">
-      <div class="face">
-        <div class="corner"><span class="lvl lvl-${w.level}">${w.level}</span></div>
-        <div class="corner-r"><button class="icon-btn" data-speak aria-label="Dinle">🔊</button></div>
-        <div class="emoji-bubble">${w.emoji}</div>
-        <div class="big-word">${esc(w.word)}</div>
-        <div class="pos">${esc(w.pos)}${w.note ? ` · ${esc(w.note)}` : ""}</div>
-        <button class="chip" id="peek" style="margin-top:16px">👁️ Anlamı göster</button>
-        <div class="meaning" id="peekTr" hidden>${esc(w.tr)}</div>
-      </div>
-    </div>
-    <div class="scan-actions three">
-      <button class="btn scan-hard" data-t="hard">😰 Zor<small>2 dakika sonra <span class="kbd">1</span></small></button>
-      <button class="btn scan-medium" data-t="medium">🙂 Orta<small>10 dakika sonra <span class="kbd">2</span></small></button>
-      <button class="btn scan-easy" data-t="easy">😀 Kolay<small>4 gün sonra <span class="kbd">3</span></small></button>
-    </div>
-    <div class="scan-never"><button class="linkish" id="scanNever">Bu kelimeyi hiç sorma <span class="kbd">0</span></button></div>
-    <div class="scan-foot">
-      <span>Bu turda: <b>${scan.easy}</b> kolay · <b>${scan.medium}</b> orta · <b>${scan.hard}</b> zor${scan.never ? ` · <b>${scan.never}</b> elendi` : ""}${seen >= 10 ? ` · kolay oranı <b>%${pct}</b>` : ""}</span>
-      <button class="btn btn-ghost" id="scanUndo" ${scan.history.length ? "" : "disabled"}>↶ Geri al</button>
-    </div>
-    <p class="sub" style="font-size:13px">Kolay dediklerin çalışma listesine girmez, 4 gün sonra bir kez kontrol için gelir. Orta 10 dakika, zor 2 dakika sonra karşına çıkar; bilemediğin sürece zor kelimeler hep 2 dakikada bir gelir, doğru bildiğinde aralık açılmaya başlar.</p>`
-    : `<div class="panel done"><div class="big">✅</div><h1 class="h-display">${level} taraması bitti</h1>
-      <p class="sub">${known} kelimeyi zaten biliyordun. Kalanlar çalışma listende.</p>
-      <div class="chips" style="justify-content:center;margin-top:20px"><a class="btn btn-primary" href="#/study/${level}">Çalışmaya başla</a></div></div>`}`;
-
-  if (!w) return;
-  v.querySelector("[data-speak]").addEventListener("click", () => sayWord(w));
-  $("#peek").addEventListener("click", peekScan);
-  v.querySelectorAll("[data-t]").forEach((b) => b.addEventListener("click", () => scanAnswer(b.dataset.t)));
-  $("#scanNever").addEventListener("click", () => scanAnswer("never"));
-  $("#scanUndo").addEventListener("click", undoScan);
-}
-
-function peekScan() {
-  scan.peek = true;
-  $("#peekTr").hidden = false;
-  $("#peek").hidden = true;
-}
-
-function scanAnswer(level) {
-  const w = scan.current;
-  if (!w) return;
-  S().cards[cardKey(w)] = level === "never" ? excludedCard() : triageCard(level);
-  if (level === "hard") S().priority[w.id] = true;
-  scan[level]++;
-  scan.history.push({ id: w.id, level });
-  save();
-  drawScan();
-}
-
-function undoScan() {
-  const last = scan.history.pop();
-  if (!last) return;
-  delete S().cards[String(last.id)];
-  S().removed[String(last.id)] = Date.now();
-  delete S().priority[last.id];
-  scan[last.level]--;
-  save();
-  drawScan();
-}
-
-function scanKeys(e) {
-  if (!scan?.current || e.target.matches("input, textarea")) return;
-  const byKey = { 1: "hard", 2: "medium", 3: "easy", 0: "never" }[e.key];
-  if (byKey) { e.preventDefault(); scanAnswer(byKey); }
-  else if (e.key === " ") { e.preventDefault(); peekScan(); }
-  else if (e.key.toLowerCase() === "z" && (e.ctrlKey || e.metaKey)) undoScan();
 }
 
 // ---------- Çalışma ----------
@@ -434,7 +334,7 @@ function nextCard() {
   const mode = S().settings.mode;
   const card = cardOf(w, dir) || newCard();
   const isNew = !cardOf(w, dir) || card.state === "new";
-  Object.assign(session, { current: w, dir, revealed: false, suggested: 3 });
+  Object.assign(session, { current: w, dir, revealed: false, suggested: "medium" });
 
   // Üretim kartında (Türkçe → İngilizce) dinleme yerine yazma kullanılır
   const kind = mode === "classic" ? "classic" : mode === "quiz" ? "quiz" : dir === "r" ? "write" : mode;
@@ -615,10 +515,15 @@ async function fillDict(w, root) {
   root.querySelectorAll("[data-def]").forEach((el) => { if (d.def) el.innerHTML = `<span class="muted">EN:</span> ${esc(d.def)}`; });
 }
 
+const GRADES = [
+  { level: "hard", label: "😰 Zor", cls: "g1" },
+  { level: "medium", label: "🙂 Orta", cls: "g2" },
+  { level: "easy", label: "😀 Kolay", cls: "g4" },
+];
+
 function gradesHtml(card) {
-  const labels = ["Tekrar", "Zor", "İyi", "Kolay"];
-  return `<div class="grades">${labels.map((l, i) => `
-    <button class="grade g${i + 1}" data-grade="${i + 1}">${l}<small>${preview(card, i + 1)} <span class="kbd">${i + 1}</span></small></button>`).join("")}</div>`;
+  return `<div class="grades three">${GRADES.map((g, i) => `
+    <button class="grade ${g.cls}" data-grade="${g.level}">${g.label}<small>${preview(card, g.level)} <span class="kbd">${i + 1}</span></small></button>`).join("")}</div>`;
 }
 
 function answerHtml(w, dir, kind, card) {
@@ -652,7 +557,7 @@ function distractors(w, n) {
 function bindCardCommon(w, root) {
   root.querySelectorAll("[data-speak]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); sayWord(w); }));
   root.querySelectorAll("[data-slow]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); sayWord(w, 0.6); }));
-  root.querySelectorAll("[data-grade]").forEach((b) => b.addEventListener("click", () => grade(Number(b.dataset.grade))));
+  root.querySelectorAll("[data-grade]").forEach((b) => b.addEventListener("click", () => grade(b.dataset.grade)));
   bindRich(w, root.querySelector(".face.back"));
 }
 
@@ -702,7 +607,7 @@ function bindQuiz(w) {
       if (Number(o.dataset.id) === w.id) o.classList.add("right");
     });
     if (!ok) b.classList.add("wrong");
-    reveal(ok ? 3 : 1);
+    reveal(ok ? "medium" : "hard");
   });
 }
 
@@ -720,7 +625,7 @@ function bindTyping(w) {
     verdict.className = `verdict ${ok ? "ok" : "no"}`;
     verdict.textContent = ok ? "✓ Doğru!" : close ? `Neredeyse! Doğrusu: ${w.word}` : `✗ Doğrusu: ${w.word}`;
     $("#giveUp").remove();
-    reveal(ok ? 3 : close ? 2 : 1);
+    reveal(ok ? "medium" : close ? "medium" : "hard");
   };
   $("#typeForm").addEventListener("submit", (e) => { e.preventDefault(); check(input.value); });
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); check(input.value); } });
@@ -755,7 +660,7 @@ function grade(g) {
   const prev = S().cards[key];
   if (!prev && dir === "f") bumpNew();
   const next = schedule(prev || newCard(), g);
-  if (g === 1 && prev?.state === "review") {
+  if (g === "hard" && prev?.state === "review") {
     delete next.known;
     if (next.lapses >= LEECH_LAPSES && !next.leech) {
       next.leech = true;
@@ -786,7 +691,7 @@ function studyKeys(e) {
     $("#options").querySelectorAll(".option")[Number(e.key) - 1]?.click();
     return;
   }
-  if (/^[1-4]$/.test(e.key) && session.revealed) { grade(Number(e.key)); return; }
+  if (/^[1-3]$/.test(e.key) && session.revealed) { grade(GRADES[Number(e.key) - 1].level); return; }
   if (e.key.toLowerCase() === "r") sayWord(session.current);
 }
 
@@ -1248,7 +1153,7 @@ function onCloudChange(reason) {
   // Başka cihazdan gelen güncelleme: çalışma ekranını bölmeden sadece sayaçları yenile
   $("#streakPill").textContent = `🔥 ${streak()}`;
   const h = location.hash;
-  if (!h.startsWith("#/study") && !h.startsWith("#/scan") && !h.startsWith("#/settings") && $("#modal").hidden) route();
+  if (!h.startsWith("#/study") && !h.startsWith("#/settings") && $("#modal").hidden) route();
 }
 
 cloud.onStatus((st) => {

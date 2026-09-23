@@ -4,7 +4,6 @@ const MIN = 60 * 1000;
 export const DAY = 24 * 60 * MIN;
 const LEARN_STEPS = [2, 10];   // dakika: Tekrar = 2 dk (sabit), Zor = 10 dk
 const RELEARN_STEP = 10;       // dakika
-const GRADUATE = 1;            // gün
 const EASY_GRADUATE = 4;       // gün
 
 export const newCard = () => ({ state: "new", due: 0, interval: 0, ease: 2.5, reps: 0, lapses: 0, step: 0 });
@@ -31,60 +30,41 @@ export function triageCard(level, now = Date.now()) {
 
 export const LEECH_LAPSES = 4;
 
-export function schedule(card, grade, now = Date.now()) {
-  const c = { ...card, reps: card.reps + 1, last: now };
+// Üç seviye: hard = 2 dk (sabit), medium = 10 dk (sabit), easy = 4 gün ve sonra açılarak büyür
+const LEVEL_OF = { 1: "hard", 2: "medium", 3: "medium", 4: "easy" };
 
-  if (c.state === "new" || c.state === "learning" || c.state === "relearning") {
-    const relearn = c.state === "relearning";
-    if (grade === 1) {
-      c.state = relearn ? "relearning" : "learning";
-      c.step = 0;
-      c.due = now + (relearn ? RELEARN_STEP : LEARN_STEPS[0]) * MIN;
-    } else if (grade === 2) {
-      c.state = relearn ? "relearning" : "learning";
-      c.step = 1;
-      c.due = now + LEARN_STEPS[1] * MIN;
-    } else if (grade === 3) {
-      const next = c.step + 1;
-      if (!relearn && next < LEARN_STEPS.length) {
-        c.state = "learning";
-        c.step = next;
-        c.due = now + LEARN_STEPS[next] * MIN;
-      } else {
-        c.state = "review";
-        c.interval = relearn ? Math.max(1, c.interval) : GRADUATE;
-        c.due = now + c.interval * DAY;
-      }
-    } else {
-      c.state = "review";
-      c.interval = relearn ? Math.max(2, c.interval * 1.5) : EASY_GRADUATE;
-      c.due = now + c.interval * DAY;
+export function schedule(card, level, now = Date.now()) {
+  const l = typeof level === "number" ? LEVEL_OF[level] : level;
+  const c = { ...card, reps: (card.reps || 0) + 1, last: now };
+  const wasReview = card.state === "review";
+
+  if (l === "hard") {
+    if (wasReview) {
+      c.lapses = (c.lapses || 0) + 1;
+      c.ease = Math.max(1.3, (c.ease || 2.5) - 0.2);
+      c.interval = Math.max(1, (c.interval || 1) * 0.3);
     }
+    c.state = wasReview || card.state === "relearning" ? "relearning" : "learning";
+    c.step = 0;
+    c.due = now + LEARN_STEPS[0] * MIN;   // her zaman 2 dakika
     return c;
   }
 
-  // review
-  const overdue = Math.max(0, (now - card.due) / DAY);
-  if (grade === 1) {
-    c.lapses++;
-    c.ease = Math.max(1.3, c.ease - 0.2);
-    c.interval = Math.max(1, c.interval * 0.3);
-    c.state = "relearning";
-    c.step = 0;
-    c.due = now + RELEARN_STEP * MIN;
+  if (l === "medium") {
+    c.state = wasReview || card.state === "relearning" ? "relearning" : "learning";
+    c.step = 1;
+    c.due = now + LEARN_STEPS[1] * MIN;   // her zaman 10 dakika
     return c;
   }
-  if (grade === 2) {
-    c.ease = Math.max(1.3, c.ease - 0.15);
-    c.interval = Math.max(c.interval + 1, c.interval * 1.2);
-  } else if (grade === 3) {
-    c.interval = Math.max(c.interval + 1, (c.interval + overdue / 2) * c.ease);
-  } else {
-    c.ease += 0.15;
-    c.interval = Math.max(c.interval + 2, (c.interval + overdue) * c.ease * 1.3);
-  }
-  c.interval = Math.min(3650, c.interval);
-  c.due = now + Math.round(c.interval) * DAY;
+
+  // easy: ilk seferde 4 gün, sonraki her "kolay"da aralık büyür
+  const prev = card.interval || 0;
+  c.ease = Math.min(3.2, (c.ease || 2.5) + 0.05);
+  c.interval = prev >= EASY_GRADUATE ? Math.min(3650, Math.round(prev * c.ease)) : EASY_GRADUATE;
+  c.state = "review";
+  c.step = 0;
+  c.due = now + c.interval * DAY;
+  delete c.known;
   return c;
 }
 
