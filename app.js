@@ -1180,5 +1180,15 @@ loadData().then(() => cloud.init(onCloudChange)).then(route).catch((err) => {
 });
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  // Yeni sürüm yayınlandığında uygulama kendini bir kez yeniler
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading) return;
+    reloading = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register("sw.js").then((reg) => {
+    reg.update();
+    setInterval(() => reg.update(), 60 * 60 * 1000);
+  }).catch(() => {});
 }
