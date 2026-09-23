@@ -1,9 +1,9 @@
-import { store, save, today, logReview, newCountToday, bumpNew, streak, exportData, importData, resetAll } from "./storage.js?v=12";
-import { newCard, knownCard, excludedCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js?v=12";
-import { playWord, closeVideo } from "./video.js?v=12";
-import { lookup, playAudio } from "./dict.js?v=12";
-import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js?v=12";
-import * as cloud from "./cloud.js?v=12";
+import { store, save, today, logReview, newCountToday, bumpNew, streak, exportData, importData, resetAll } from "./storage.js?v=13";
+import { newCard, knownCard, excludedCard, schedule, preview, humanize, isMature, DAY, LEECH_LAPSES } from "./srs.js?v=13";
+import { playWord, closeVideo } from "./video.js?v=13";
+import { lookup, playAudio } from "./dict.js?v=13";
+import { hasKey, checkSentence, makeMnemonic, makeStory, testConnection } from "./ai.js?v=13";
+import * as cloud from "./cloud.js?v=13";
 
 const LEVELS = ["B1", "B2"];
 const LEVEL_DESC = { B1: "Orta", B2: "Orta üstü" };
@@ -882,10 +882,10 @@ function renderStory(v, arg) {
     const level = candidates.some((w) => w.level === "B2") ? "B2" : "B1";
     try {
       const res = await makeStory(candidates, level);
-      stories.push({ ...res, words: candidates.map((w) => w.word), ids: candidates.map((w) => w.id), date: today(), answers: {} });
-      if (stories.length > 30) stories.shift();
+      S().stories.push({ ...res, words: candidates.map((w) => w.word), ids: candidates.map((w) => w.id), date: today(), answers: {} });
+      if (S().stories.length > 30) S().stories.shift();
       save();
-      location.hash = `#/story/${stories.length - 1}`;
+      location.hash = `#/story/${S().stories.length - 1}`;
     } catch (err) {
       toast(err.message, 4000);
       btn.disabled = false;
@@ -1045,7 +1045,13 @@ function renderSettings(v) {
         <button class="btn" id="reset" style="color:var(--bad)">Sıfırla</button></div>
     </div>`;
 
-  const set = (k, val) => { st[k] = val; if (k !== "apiKey") st._ts = Date.now(); save(); };
+  // Her zaman güncel ayar nesnesine yaz (senkronizasyon araya girse bile kaybolmasın)
+  const set = (k, val) => {
+    const cur = S().settings;
+    cur[k] = val;
+    if (k !== "apiKey") cur._ts = Date.now();
+    save();
+  };
   $("#setLevels").addEventListener("click", (e) => {
     const b = e.target.closest(".chip"); if (!b) return;
     const lv = b.dataset.v;

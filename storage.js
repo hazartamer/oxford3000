@@ -59,11 +59,20 @@ export function save() {
 export const store = () => state;
 export const setSaveHook = (fn) => { saveHook = fn; };
 
-// Buluttan gelen birleşik veriyi yerine koyar (API anahtarı cihazda kalır)
+// Buluttan gelen birleşik veriyi yerine koyar (API anahtarı cihazda kalır).
+// Nesneleri değiştirmek yerine içeriklerini tazeleriz; böylece açık ekranların
+// elindeki referanslar geçersiz kalmaz (ayar değişiklikleri kaybolmasın).
 export function replaceState(next) {
-  const key = state.settings.apiKey;
-  state = normalize(next);
-  state.settings.apiKey = key;
+  const fresh = normalize(next);
+  fresh.settings.apiKey = state.settings.apiKey;
+
+  const settings = state.settings;
+  for (const k of Object.keys(settings)) delete settings[k];
+  Object.assign(settings, fresh.settings);
+  fresh.settings = settings;
+
+  for (const k of Object.keys(state)) delete state[k];
+  Object.assign(state, fresh);
   writeLocal();
 }
 

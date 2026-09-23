@@ -1,6 +1,6 @@
 // Hesap (e-posta + şifre) ve cihazlar arası senkronizasyon: Firebase Authentication + Cloud Firestore.
-import { FIREBASE_CONFIG } from "./firebase-config.js?v=12";
-import { store, replaceState, setSaveHook, clearLocal, normalize } from "./storage.js?v=12";
+import { FIREBASE_CONFIG } from "./firebase-config.js?v=13";
+import { store, replaceState, setSaveHook, clearLocal, normalize } from "./storage.js?v=13";
 
 const V = "12.19.0";
 const CDN = `https://www.gstatic.com/firebasejs/${V}`;
